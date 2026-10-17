@@ -1,0 +1,50 @@
+name: bench
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "results/**"
+      - "README.md"
+permissions:
+  contents: write
+concurrency:
+  group: bench
+  cancel-in-progress: false
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@v4
+      - name: deps
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq unzip time >/dev/null
+      - name: cache silesia
+        uses: actions/cache@v4
+        with:
+          path: corpus
+          key: silesia-v1
+      - name: build
+        run: |
+          make -j2 all build/zstd-cli
+      - name: run experiments
+        run: |
+          bash scripts/run_all.sh gh-${{ github.run_number }}
+      - name: collect
+        run: |
+          ls -la results/gh-${{ github.run_number }}/
+          head -100 results/gh-${{ github.run_number }}/RESULTS.md || true
+      - name: commit results
+        run: |
+          RUN=gh-${{ github.run_number }}
+          git config user.name "bench-bot"
+          git config user.email "bench-bot@users.noreply.github.com"
+          git add results/$RUN || true
+          git commit -m "results: $RUN" -q || echo "nothing to commit"
+          git push
+      - uses: actions/upload-artifact@v4
+        with:
+          name: results-gh-${{ github.run_number }}
+          path: results/gh-${{ github.run_number }}/
+          retention-days: 90

@@ -1,0 +1,8 @@
+deps/
+corpus/
+build/
+*.o
+*.zst
+*.lit
+results/
+__pycache__/
