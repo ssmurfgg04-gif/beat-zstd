@@ -83,7 +83,10 @@ two different runner VMs); raw CSVs in results/gh-*/.
   any size difference is pure table layout. The parser experiment holds
   the cost model constant, so any difference is pure parsing.
 - lzmini's cost model is deliberately simple. Its absolute ratio is NOT
-  comparable to zstd; the parser deltas are.
+  comparable to zstd; the parser deltas are. Both lzmini and the literal
+  dumps fed to tANS cap input at 16 MB (--cap 16), so mozilla, nci,
+  samba and webster are measured on their first 16 MB only; sizes
+  elsewhere are full files.
 - Router rules are hand-set (below), not fitted to the corpus. The filter
   choice is empirical per file (compress a 128 KB sample 4 ways at level
   6, pick the smallest, plain wins ties within 1%).
@@ -106,6 +109,7 @@ src/tans_bench.c   experiment A (entropy table spreads)
 src/lzmini.c       experiment B (parsers)
 src/bzrouter.c     experiment C (probe/route/dict/filters)
 scripts/corpus.sh  Silesia + extras, with mirrors and fallback
+scripts/selftest.sh fast quality gate (builds + roundtrip-verified runs on synthetic data, < 2 min)
 scripts/run_all.sh orchestrates everything, writes results/<run>/
 scripts/summarize.py RESULTS.md generator
 .github/workflows/bench.yml  runner bench

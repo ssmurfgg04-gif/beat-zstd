@@ -25,9 +25,10 @@ jobs:
         with:
           path: corpus
           key: silesia-v1
-      - name: build
+      - name: selftest (fast quality gate)
         run: |
-          make -j2 all build/zstd-cli
+          bash scripts/selftest.sh
+      - name: run experiments
       - name: run experiments
         run: |
           bash scripts/run_all.sh gh-${{ github.run_number }}

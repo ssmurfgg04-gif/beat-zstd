@@ -189,7 +189,7 @@ static int mode_bench(const char *file, const char *levelsStr, const char *dictP
     if (levelsStr) parse_levels(levelsStr, levels, &nlev);
     else { int def[] = {1,3,6,9,12,16,19}; memcpy(levels, def, sizeof(def)); nlev = 7; }
     void *dict = NULL; size_t dictSize = 0;
-    if (dictPath) { dict = read_file(dictPath, &dictSize); if (!dict) { fprintf(stderr, "dict open\n"); return 1; } }
+    if (dictPath) { dict = read_file(dictPath, &dictSize); if (!dict) { fprintf(stderr, "dict open %s\n", dictPath); return 1; } }
     size_t cap = ZSTD_compressBound(n);
     uint8_t *dst = malloc(cap);
     const char *base = strrchr(file, '/'); base = base ? base + 1 : file;
@@ -273,24 +273,25 @@ static int mode_route(const char *file, const char *dictPath, int v2) {
     size_t n; uint8_t *d = read_file(file, &n);
     if (!d) { fprintf(stderr, "open %s\n", file); return 1; }
     void *dict = NULL; size_t dictSize = 0;
-    if (dictPath) { dict = read_file(dictPath, &dictSize); }
+    if (dictPath) { dict = read_file(dictPath, &dictSize); if (!dict) { fprintf(stderr, "dict open %s\n", dictPath); return 1; } }
     Probe p = probe_buf(d, n);
     int level = v2 ? route_decide_v2(p, d, n, dict, dictSize) : route_decide(p, dict != NULL);
+    /* filter transform + zstd: pick the filter first, then time the whole
+     * pipeline (transform included) so route cspeed is comparable with
+     * filterbench and no transform cost is hidden. */
     int filter = pick_filter(d, n);
-    /* filtered pipeline: 1 byte header + zstd(filtered) */
+    double tf0 = now_ms();
     const uint8_t *payload = d; size_t payloadLen = n; uint8_t *ft = NULL;
     if (filter == 2) { size_t on; ft = fwd_split(d, n, 2, &on); payload = ft; payloadLen = on; }
     else if (filter == 4) { size_t on; ft = fwd_split(d, n, 4, &on); payload = ft; payloadLen = on; }
     else if (filter == 1) { ft = fwd_delta(d, n); payload = ft; payloadLen = n; }
+    double tf1 = now_ms();
     size_t cap = ZSTD_compressBound(payloadLen) + 1;
     uint8_t *dst = malloc(cap);
     dst[0] = (uint8_t)filter;
     double cms, dms; size_t cs;
-    /* time includes the filter transform for honesty */
-    double t0 = now_ms();
     int ok = zstd_roundtrip_level(payload, payloadLen, level, dst + 1, cap - 1, dict, dictSize, &cms, &dms, &cs);
-    double t1 = now_ms();
-    (void)t0; (void)t1;
+    cms += tf1 - tf0; /* charge the transform to the route's compress time */
     if (!ok) { fprintf(stderr, "route roundtrip FAIL %s\n", file); return 1; }
     /* verify inverse filter via full decode */
     ZSTD_DCtx *dc = ZSTD_createDCtx();

@@ -296,7 +296,7 @@ static uint64_t encode(const uint8_t *stream, size_t len) {
     }
     encFinalX = x;
     bw_finish();
-    /* header: nsyms(8) x0(4) payloadbits(8) payloadbytes(4) */
+    /* the caller passes x0/payloadBits/payloadBytes out of band (globals) */
     return totalBits;
 }
 
