@@ -1,0 +1,7 @@
+model name	: AMD EPYC 9V45 96-Core Processor
+avx2
+avx512bw
+avx512f
+bmi2
+sse4_2
+4

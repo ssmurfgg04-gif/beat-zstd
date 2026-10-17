@@ -79,14 +79,16 @@ static Probe probe_buf(const uint8_t *d, size_t n) {
             if (h1c[a][b]) { double q = h1c[a][b] / tot1; H1 -= q * log2(q); }
         p.h1 = H1;
     }
-    /* 8-byte shingle repeat rate via 17-bit hash bitmap, stride 7 */
-    static uint8_t seen[1 << 17];
-    memset(seen, 0, sizeof(seen));
+    /* 8-byte shingle repeat rate via 21-bit hash map, stride 7
+       (2^17 slots had ~14% birthday collisions on 256KB of random data,
+       which fooled the incompressible rule; 2^21 brings it under 1%) */
+    static uint8_t seen[1 << 21];
+    memset(seen, 0, (1 << 21));
     size_t total = 0, rep = 0;
     for (size_t i = 0; i + 8 <= sn; i += 7) {
         uint32_t hh = 0;
         for (int k = 0; k < 8; k++) hh = hh * 16777619u + d[i + k];
-        hh = (hh ^ (hh >> 17)) & ((1 << 17) - 1);
+        hh = (hh ^ (hh >> 13)) & ((1 << 21) - 1);
         if (seen[hh]) rep++;
         else seen[hh] = 1;
         total++;
@@ -235,6 +237,26 @@ static int pick_filter(const uint8_t *d, size_t n) {
     return bestf;
 }
 
+/* v2: calibrate the level on a 1MB sample - compress at 6/12/19, take the
+ * fastest level within 0.5% of the smallest sample size. This is the GPX
+ * probe-and-route idea done with the only honest calibrator available: the
+ * codec itself, on a sample. */
+static int route_decide_v2(Probe p, const uint8_t *d, size_t n, int hasDict) {
+    if (p.size < 4096 && hasDict) return 12;
+    if (p.h0 > 7.85 && p.shingle < 0.02) return 1;
+    size_t sn = n < (1u << 20) ? n : (1u << 20);
+    size_t cap = ZSTD_compressBound(sn);
+    uint8_t *dst = malloc(cap);
+    size_t c6 = zstd_compress_level(d, sn, 6, dst, cap, NULL, 0, NULL);
+    size_t c12 = zstd_compress_level(d, sn, 12, dst, cap, NULL, 0, NULL);
+    size_t c19 = zstd_compress_level(d, sn, 19, dst, cap, NULL, 0, NULL);
+    free(dst);
+    size_t mn = c6 < c12 ? c6 : c12; if (c19 < mn) mn = c19;
+    if (c6 <= mn + mn / 200) return 6;
+    if (c12 <= mn + mn / 200) return 12;
+    return 19;
+}
+
 static int route_decide(Probe p, int hasDict) {
     if (p.size < 4096 && hasDict) return 12;
     if (p.h0 > 7.85 && p.shingle < 0.02) return 1;
@@ -246,13 +268,13 @@ static int route_decide(Probe p, int hasDict) {
     return 6;
 }
 
-static int mode_route(const char *file, const char *dictPath) {
+static int mode_route(const char *file, const char *dictPath, int v2) {
     size_t n; uint8_t *d = read_file(file, &n);
     if (!d) { fprintf(stderr, "open %s\n", file); return 1; }
     void *dict = NULL; size_t dictSize = 0;
     if (dictPath) { dict = read_file(dictPath, &dictSize); }
     Probe p = probe_buf(d, n);
-    int level = route_decide(p, dict != NULL);
+    int level = v2 ? route_decide_v2(p, d, n, dict != NULL) : route_decide(p, dict != NULL);
     int filter = pick_filter(d, n);
     /* filtered pipeline: 1 byte header + zstd(filtered) */
     const uint8_t *payload = d; size_t payloadLen = n; uint8_t *ft = NULL;
@@ -287,7 +309,7 @@ static int mode_route(const char *file, const char *dictPath) {
     } else if (memcmp(back, d, n) != 0) { fprintf(stderr, "route VERIFY FAIL\n"); return 1; }
     const char *fname = filter == 2 ? "split2" : filter == 4 ? "split4" : filter == 1 ? "delta" : "plain";
     const char *base = strrchr(file, '/'); base = base ? base + 1 : file;
-    printf("%s,route,%s,%d,%s,%zu,%.1f,%.1f,%.1f,%.1f\n", base, dict ? "dict" : "nodict", level, fname,
+    printf("%s,route%s,%s,%d,%s,%zu,%.1f,%.1f,%.1f,%.1f\n", base, v2 ? "2" : "1", dict ? "dict" : "nodict", level, fname,
            cs + 1, cms, payloadLen / 1048576.0 / (cms / 1000.0), dms, n / 1048576.0 / (dms / 1000.0));
     free(d); free(dst); free(ft); free(back); free(dict);
     return 0;
@@ -371,9 +393,12 @@ int main(int argc, char **argv) {
         return mode_bench(argv[2], levels, dict);
     }
     if (!strcmp(mode, "route")) {
-        const char *dict = NULL;
-        for (int i = 3; i < argc; i++) if (!strcmp(argv[i], "--dict") && i + 1 < argc) dict = argv[++i];
-        return mode_route(argv[2], dict);
+        const char *dict = NULL; int v2 = 0;
+        for (int i = 3; i < argc; i++) {
+            if (!strcmp(argv[i], "--dict") && i + 1 < argc) dict = argv[++i];
+            else if (!strcmp(argv[i], "--v2")) v2 = 1;
+        }
+        return mode_route(argv[2], dict, v2);
     }
     if (!strcmp(mode, "train")) {
         if (argc < 4) { fprintf(stderr, "train <dir> <out>\n"); return 1; }

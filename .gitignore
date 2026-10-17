@@ -4,5 +4,6 @@ build/
 *.o
 *.zst
 *.lit
-results/
+*.lit
+results/smoke*/
 __pycache__/

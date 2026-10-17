@@ -46,7 +46,7 @@ static uint16_t dec_base[MAXN];
 static uint32_t norm[MAXSYM];     /* normalized counts, lowprob => count 1 + flag */
 static uint8_t lowprob[MAXSYM];
 static uint32_t hist[MAXSYM];
-static uint32_t nSym, tableLog, tableSize;
+static uint32_t tableLog, tableSize;
 static uint32_t posStart[MAXSYM]; /* start index in flat enc arena */
 static EncEntry enc[MAXN];
 
@@ -257,7 +257,7 @@ static uint32_t br_read(BitR *r, uint32_t k) {
 }
 
 /* ---------- codec ---------- */
-static uint8_t *outBytes; static size_t outCap;
+static uint8_t *outBytes;
 static uint32_t encFinalX;
 
 /* encode stream (len symbols) reversed; returns payload bits */
@@ -367,6 +367,11 @@ static SpreadFn spreadFns[] = { spread_fse, spread_edf, spread_balanced, spread_
 static uint8_t *verifyBuf;
 
 static void run_stream(const char *name, const uint8_t *data, size_t len, int csv) {
+    /* codec buffers sized for this stream (worst case ~13 bits/symbol) */
+    static size_t outCap = 0;
+    size_t need = len * 2 + 64;
+    if (need > outCap) { outCap = need; outBytes = realloc(outBytes, outCap); verifyBuf = realloc(verifyBuf, len + 64); }
+    if (!outBytes || !verifyBuf) { fprintf(stderr, "oom\n"); exit(1); }
     /* histogram */
     memset(hist, 0, sizeof(hist));
     for (size_t i = 0; i < len; i++) hist[data[i]]++;
@@ -438,11 +443,8 @@ int main(int argc, char **argv) {
         printf("%-28s %-4s %-8s %9s %9s %9s\n", "stream", "L", "spread", "bits/sym", "entropy", "excess");
     if (csv) printf("stream,L,spread,bits_per_sym,entropy,excess\n");
 
-    outCap = 512u << 20; /* generous */
-    outBytes = malloc(outCap);
-    verifyBuf = malloc(512u << 20);
-    synBuf = malloc(32u << 20);
-    if (!outBytes || !verifyBuf || !synBuf) { fprintf(stderr, "oom\n"); return 1; }
+    outBytes = NULL; verifyBuf = NULL; synBuf = malloc(32u << 20);
+    if (!synBuf) { fprintf(stderr, "oom\n"); return 1; }
 
     if (synth) {
         size_t len = 16u << 20;

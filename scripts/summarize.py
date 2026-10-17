@@ -65,13 +65,14 @@ def main():
         tot_in = sum(pin.values())
 
         routetot = [0, 0.0, 0.0]
+        routetot2 = [0, 0.0, 0.0]
         routefiles = set()
         for r in route:
-            if r[0] in mixed:
-                routetot[0] += int(r[5])
-                routetot[1] += float(r[6])
-                routetot[2] += float(r[8])
-                routefiles.add(r[0])
+            if r[0] not in mixed:
+                continue
+            tgt = routetot2 if (len(r) > 1 and r[1] == "route2") else routetot
+            tgt[0] += int(r[5]); tgt[1] += float(r[6]); tgt[2] += float(r[8])
+            routefiles.add(r[0])
 
         out.append("## Experiment C: router vs fixed levels (mixed corpus, %d files, %s MB in)" %
                    (len(mixed), fmt_mb(tot_in)))
@@ -84,7 +85,9 @@ def main():
             s, ct, dt = by_level[lvl][0], by_level[lvl][1] / 1000.0, by_level[lvl][2] / 1000.0
             pareto.append(("-L%s" % lvl, s, ct, dt))
         if routetot[0]:
-            pareto.append(("router", routetot[0], routetot[1] / 1000.0, routetot[2] / 1000.0))
+            pareto.append(("router v1 (hand-set rules)", routetot[0], routetot[1] / 1000.0, routetot[2] / 1000.0))
+        if routetot2[0]:
+            pareto.append(("router v2 (sample-calibrated)", routetot2[0], routetot2[1] / 1000.0, routetot2[2] / 1000.0))
         for name, s, ct, dt in pareto:
             out.append("| %s | %s | %.4f | %.1f | %.1f |" % (name, fmt_mb(s), s / tot_in if tot_in else 0, ct, dt))
         if adapt:
@@ -95,14 +98,16 @@ def main():
                        (fmt_mb(ain), fmt_mb(asz), asz / ain if ain else 0, at))
         out.append("")
         # verdict: is router pareto-dominated by any single level? does it beat L19 ratio?
-        if routetot[0] and tot_in:
-            better = [n for (n, s, ct, dt) in pareto if n.startswith("-L") and s <= routetot[0] and ct <= routetot[1] / 1000.0]
-            l19 = by_level.get("19", [0, 0, 0, 0])
-            out.append("Router total: %s MB. Fixed levels that are both smaller AND faster: %s." %
-                       (fmt_mb(routetot[0]), ", ".join(better) if better else "none"))
-            out.append("Router vs -L19: size %+.2f%%, time %+.1f%%." %
-                       (100.0 * (routetot[0] - l19[0]) / l19[0] if l19[0] else 0,
-                        100.0 * (routetot[1] / 1000.0 - l19[1] / 1000.0) / (l19[1] / 1000.0) if l19[1] else 0))
+        l19 = by_level.get("19", [0, 0, 0, 0])
+        for tag, rt in (("v1", routetot), ("v2", routetot2)):
+            if not rt[0] or not tot_in:
+                continue
+            better = [n for (n, s, ct, dt) in pareto if n.startswith("-L") and s <= rt[0] and ct <= rt[1] / 1000.0]
+            out.append("Router %s total: %s MB. Fixed levels that are both smaller AND faster: %s." %
+                       (tag, fmt_mb(rt[0]), ", ".join(better) if better else "none"))
+            out.append("Router %s vs -L19: size %+.2f%%, time %+.1f%%." %
+                       (tag, 100.0 * (rt[0] - l19[0]) / l19[0] if l19[0] else 0,
+                        100.0 * (rt[1] / 1000.0 - l19[1] / 1000.0) / (l19[1] / 1000.0) if l19[1] else 0))
         out.append("")
 
         # ---------- dictionary track ----------

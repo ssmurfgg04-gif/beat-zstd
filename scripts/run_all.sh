@@ -76,9 +76,10 @@ for corp in feed_small text4k; do
   fi
 done
 
-# router decisions on the mixed corpus
+# router decisions on the mixed corpus (v1 = hand-set rules, v2 = sample-calibrated)
 for f in $BENCH_FILES; do
   ./build/bzrouter route "$f" >> "$RES/route.csv" 2>>"$RES/route.err"
+  ./build/bzrouter route "$f" --v2 >> "$RES/route.csv" 2>>"$RES/route.err"
 done
 # router on small files with dict (same samples)
 for corp in feed_small text4k; do
@@ -87,6 +88,7 @@ for corp in feed_small text4k; do
   if [ -d "$d" ] && [ -f "$dict" ]; then
     ls "$d" | shuf --random-source=<(yes) | head -150 | while read -r fn; do
       ./build/bzrouter route "$d/$fn" --dict "$dict" >> "$RES/route.csv" 2>>"$RES/route.err"
+      ./build/bzrouter route "$d/$fn" --dict "$dict" --v2 >> "$RES/route.csv" 2>>"$RES/route.err"
     done
   fi
 done
