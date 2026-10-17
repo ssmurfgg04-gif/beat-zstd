@@ -55,6 +55,22 @@ rate, costing the router a wasted level-17 pass on noise), a sample-
 calibrated router v2 (GPX-style: the codec probes itself on a 1MB sample
 at levels 6/12/19 and routes), and results committed to the repo.
 
+### Run gh-2 headline finding
+
+**Router v2 (sample-calibrated): 65.54 MB total vs zstd -L19's 66.37 MB.
+-1.26% smaller AND -3.5% faster.** No fixed zstd level is both smaller
+and faster than either router. On the same corpus, at the same settings,
+a ~0.5s-per-file probe plus routing (level + dictionary + pre-filter)
+beats stock zstd's strongest setting on both axes. The wins come from
+byte-plane splitting on 16-bit files (mr, x-ray), skipping effort on
+incompressible data, and per-file level calibration.
+
+The honest read: we did not out-code zstd's entropy stage (the optimal-
+tables experiment says that layer is already excellent). We beat it the
+only way left: by being smarter about WHICH zstd to run, and what to feed
+it. Results are reproducible (gh-1/gh-2 sizes are byte-identical across
+two different runner VMs); raw CSVs in results/gh-*/.
+
 ## Method notes
 
 - Silesia (211 MB, 12 files) is the primary corpus, plus extras: an

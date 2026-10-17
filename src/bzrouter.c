@@ -241,15 +241,16 @@ static int pick_filter(const uint8_t *d, size_t n) {
  * fastest level within 0.5% of the smallest sample size. This is the GPX
  * probe-and-route idea done with the only honest calibrator available: the
  * codec itself, on a sample. */
-static int route_decide_v2(Probe p, const uint8_t *d, size_t n, int hasDict) {
-    if (p.size < 4096 && hasDict) return 12;
+static int route_decide_v2(Probe p, const uint8_t *d, size_t n, const void *dict, size_t dictSize) {
+    int hasDict = (dict && dictSize);
+    if (p.size <= 4096 && hasDict) return 12;
     if (p.h0 > 7.85 && p.shingle < 0.02) return 1;
     size_t sn = n < (1u << 20) ? n : (1u << 20);
     size_t cap = ZSTD_compressBound(sn);
     uint8_t *dst = malloc(cap);
-    size_t c6 = zstd_compress_level(d, sn, 6, dst, cap, NULL, 0, NULL);
-    size_t c12 = zstd_compress_level(d, sn, 12, dst, cap, NULL, 0, NULL);
-    size_t c19 = zstd_compress_level(d, sn, 19, dst, cap, NULL, 0, NULL);
+    size_t c6 = zstd_compress_level(d, sn, 6, dst, cap, dict, dictSize, NULL);
+    size_t c12 = zstd_compress_level(d, sn, 12, dst, cap, dict, dictSize, NULL);
+    size_t c19 = zstd_compress_level(d, sn, 19, dst, cap, dict, dictSize, NULL);
     free(dst);
     size_t mn = c6 < c12 ? c6 : c12; if (c19 < mn) mn = c19;
     if (c6 <= mn + mn / 200) return 6;
@@ -274,7 +275,7 @@ static int mode_route(const char *file, const char *dictPath, int v2) {
     void *dict = NULL; size_t dictSize = 0;
     if (dictPath) { dict = read_file(dictPath, &dictSize); }
     Probe p = probe_buf(d, n);
-    int level = v2 ? route_decide_v2(p, d, n, dict != NULL) : route_decide(p, dict != NULL);
+    int level = v2 ? route_decide_v2(p, d, n, dict, dictSize) : route_decide(p, dict != NULL);
     int filter = pick_filter(d, n);
     /* filtered pipeline: 1 byte header + zstd(filtered) */
     const uint8_t *payload = d; size_t payloadLen = n; uint8_t *ft = NULL;
